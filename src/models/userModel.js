@@ -31,7 +31,7 @@ const userSchema = new mongoose.Schema(
 
         const hash = await bcrypt.hash(this.password, 10);
         this.password = hash;
-        return next();
+        return 
     });
 
     userSchema.methods.comaprePassword = async function (password){
