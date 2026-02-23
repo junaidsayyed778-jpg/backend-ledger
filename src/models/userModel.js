@@ -20,7 +20,6 @@ const userSchema = new mongoose.Schema(
                 required: [true, "password is required"],
                 minlength: [6, "Password should be contain more than 6 characters"],
                 select: false,
-            
         },
        
     }, {timestamps: true})
@@ -34,7 +33,7 @@ const userSchema = new mongoose.Schema(
         return 
     });
 
-    userSchema.methods.comaprePassword = async function (password){
+    userSchema.methods.comaparePassword = async function (password){
         return await bcrypt.compare(password, this.password)
     }
 

@@ -1,5 +1,6 @@
 const userModel = require("../models/userModel");
 const jwt = require("jsonwebtoken");
+const emailService = require("../services/emailService")
 
 async function userRegisterController(req, res) {
   const { name, email, password } = req.body;
@@ -35,6 +36,44 @@ async function userRegisterController(req, res) {
   });
 }
 
+//User login 
+async function userLoginController(req, res){
+    const {email, password} = req.body
+
+    const user = await userModel.findOne({ email }).select("+password")
+
+    if(!user){
+        return res.status(401).json({
+            message: "Email or password is Invalid"
+        })
+    }
+
+    const isValidPassword = await user.comaparePassword(password)
+    if(!isValidPassword){
+        res.status(401).json({
+            message: "Email or password is Invalid"
+        })
+    }
+
+    const token = jwt.sign({ userId: user._id},
+        process.env.JWT_SECRET,
+        {expiresIn: "3d"}
+    )
+
+    res.cookie("token", token)
+
+
+res.status(200).json({
+    user:{
+        email: user.email,
+        password: user.password
+    },
+    token
+})
+
+await emailService.sendRegistrationEmail(user.email, user.name )
+}
 module.exports = {
   userRegisterController,
+  userLoginController
 };
