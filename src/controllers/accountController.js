@@ -1,9 +1,9 @@
-const acountModel = require("../models/acountModel");
+const accountModel = require("../models/accountModel");
 
 async function createAcountController(req, res){
     const user = req.user;
 
-    const acount = await acountModel.create({
+    const acount = await accountModel.create({
         user: user._id
     })
 

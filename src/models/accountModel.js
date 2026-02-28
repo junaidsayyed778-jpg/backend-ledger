@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const acountSchema = new mongoose.Schema({
+const accountSchema = new mongoose.Schema({
     user:{
         type: mongoose.Schema.Types.ObjectId,
         ref: "user",
@@ -22,6 +22,6 @@ const acountSchema = new mongoose.Schema({
     }
 },{timestamps: true});
 
-acountSchema.index({user: 1, status: 1 })
-const acountModel = mongoose.model("acount", acountSchema)
-module.exports = acountModel; 
+accountSchema.index({user: 1, status: 1 })
+const accountModel = mongoose.model("acount", accountSchema)
+module.exports = accountModel; 
