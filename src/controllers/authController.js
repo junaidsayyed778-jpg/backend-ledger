@@ -1,79 +1,120 @@
 const userModel = require("../models/userModel");
+const accountModel = require("../models/accountModel");
 const jwt = require("jsonwebtoken");
-const emailService = require("../services/emailService")
+const mongoose = require("mongoose");
+const emailService = require("../services/emailService");
 
+// REGISTER
 async function userRegisterController(req, res) {
-  const { name, email, password } = req.body;
+  const session = await mongoose.startSession();
 
-  const isExists = await userModel.findOne({
-    email: email,
-  });
+  try {
+    session.startTransaction();
 
-  if (isExists) {
-    return res.status(422).json({
-      message: "User already exists",
-      status: "failed",
+    const { name, email, password } = req.body;
+
+    const isExists = await userModel.findOne({ email });
+
+    if (isExists) {
+      return res.status(422).json({
+        message: "User already exists",
+      });
+    }
+
+    // 1. create user
+    const user = await userModel.create([{
+      name,
+      email,
+      password,
+    }], { session });
+
+    // 2. create account
+    const account = await accountModel.create([{
+      user: user[0]._id,
+      balance: 0,
+      status: "ACTIVE",
+    }], { session });
+
+    await session.commitTransaction();
+
+    const token = jwt.sign(
+      { userId: user[0]._id },
+      process.env.JWT_SECRET,
+      { expiresIn: "3d" }
+    );
+
+    res.cookie("token", token);
+
+    return res.status(201).json({
+      message: "User registered successfully",
+      user: {
+        _id: user[0]._id,
+        email: user[0].email,
+        name: user[0].name,
+      },
+      account: account[0],
+      token,
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    return res.status(500).json({
+      message: error.message,
+    });
+  } finally {
+    session.endSession();
+  }
+}
+
+// LOGIN
+async function userLoginController(req, res) {
+  try {
+    const { email, password } = req.body;
+
+    const user = await userModel.findOne({ email }).select("+password");
+
+    if (!user) {
+      return res.status(401).json({
+        message: "Email or password is invalid",
+      });
+    }
+
+    const isValidPassword = await user.comparePassword(password);
+
+    if (!isValidPassword) {
+      return res.status(401).json({
+        message: "Email or password is invalid",
+      });
+    }
+
+    const token = jwt.sign(
+      { userId: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: "3d" }
+    );
+
+    res.cookie("token", token);
+
+    // send email (don’t block response ideally)
+    await emailService.sendRegistrationEmail(user.email, user.name);
+
+    return res.status(200).json({
+      user: {
+        _id: user._id,
+        email: user.email,
+        name: user.name,
+      },
+      token,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
     });
   }
-
-  const user = await userModel.create({
-    email,
-    password,
-    name,
-  });
-  const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
-    expiresIn: "3d",
-  });
-  res.cookie("token", token);
-
-  res.status(201).json({
-    user: {
-      _id: user._id,
-      email: user.email,
-      name: user.name,
-    },
-    token,
-  });
 }
 
-//User login 
-async function userLoginController(req, res){
-    const {email, password} = req.body
-
-    const user = await userModel.findOne({ email }).select("+password")
-
-    if(!user){
-        return res.status(401).json({
-            message: "Email or password is Invalid"
-        })
-    }
-
-    const isValidPassword = await user.comaparePassword(password)
-    if(!isValidPassword){
-        res.status(401).json({
-            message: "Email or password is Invalid"
-        })
-    }
-
-    const token = jwt.sign({ userId: user._id},
-        process.env.JWT_SECRET,
-        {expiresIn: "3d"}
-    )
-
-    res.cookie("token", token)
-
-
-res.status(200).json({
-    user:{
-        email: user.email,
-        password: user.password
-    },
-    token
-})
-
-await emailService.sendRegistrationEmail(user.email, user.name )
-}
 module.exports = {
   userRegisterController,
-  userLoginController
+  userLoginController,
 };

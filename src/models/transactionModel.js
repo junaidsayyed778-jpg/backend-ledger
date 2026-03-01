@@ -2,15 +2,15 @@ const mongoose = require("mongoose");
 
 const transactionSchema = new mongoose.Schema({
     fromAccount:{
-        type:mongoose.Schema.Type.ObjectId,
-        ref: "acount",
-        required: [true, "Transaction must be associated with a from acount"],
+        type:mongoose.Schema.Types.ObjectId,
+        ref: "account",
+        required: [true, "Transaction must be associated with a from account"],
         index: true
     },
     toAccount:{
         type: mongoose.Schema.Types.ObjectId,
-        ref: "acount",
-        required: [true, "Transaction must be associated with a to acount"],
+        ref: "account",
+        required: [true, "Transaction must be associated with a to account"],
         index: true
     },
     status:{

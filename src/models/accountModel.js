@@ -5,7 +5,7 @@ const accountSchema = new mongoose.Schema({
     user:{
         type: mongoose.Schema.Types.ObjectId,
         ref: "user",
-        required:[true, "Acount msut be associated with a user"],
+        required:[true, "Account must be associated with a user"],
         index: true
     },
     status:{
@@ -27,7 +27,7 @@ accountSchema.index({user: 1, status: 1 })
 
 accountSchema.methods.getBalance = async function(){
     const balancedData = await ledgerModel.aggregate([
-        {$match:{acount: this._id}},
+        {$match:{account: this._id}},
         {
             $group:{
                 _id: null,
@@ -64,5 +64,5 @@ accountSchema.methods.getBalance = async function(){
 
     return balancedData[0].balance
 }
-const accountModel = mongoose.model("acount", accountSchema)
+const accountModel = mongoose.model("account", accountSchema)
 module.exports = accountModel; 
