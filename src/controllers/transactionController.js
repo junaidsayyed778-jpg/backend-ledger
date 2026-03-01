@@ -1,5 +1,7 @@
+const { default: mongoose } = require("mongoose");
 const accountModel = require("../models/accountModel");
 const transactionModel = require("../models/transactionModel");
+const ledgerModel = require("../models/ledgerModel");
 
 async function createTransaction(req, res){
 
@@ -61,5 +63,52 @@ async function createTransaction(req, res){
         })
     }
 
-    //04. 
+    //04. Derive sender balance from ledger
+    const balance = await fromUserAccount.getBalance()
+
+    if(balance < amount ){
+        res.status(400).json({
+            message: `Insufficient balance. Current balance is ${balance} Requested amount is ${amount}`
+        })
+    }
+    //05. create transaction (PENDING)
+    const session = await transactionModel.create({
+        fromAccount,
+        toAccount,
+        amount,
+        idempotencyKey,
+        status: "PENDING"
+    }, {session});
+
+    const debitLedgerEntry = await ledgerModel.create({
+        account: fromAccount,
+        amount: amount,
+        transaction: transaction._id,
+        type: "DEBIT"
+    }, {session});
+
+    const creditLedgerEntry = await ledgerModel.create({
+        account:toAccount,
+        amount: amount,
+        transaction: transaction._id,
+        type: "CREDIT",
+    }, {session});
+
+    transaction.status = "COMPLETED";
+    await transaction.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    //10. send email notification
+    await emailService.sendTransactionEmail(req.user.email, req.user.name, amount, toAccount, fromAccount);
+    res.status(201).json({
+        message: "Transaction completed successfully",
+        transaction: transaction
+    })
+    
+}
+
+module.exports = {
+    createTransaction
 }
