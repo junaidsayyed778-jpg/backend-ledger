@@ -3,6 +3,7 @@ const accountModel = require("../models/accountModel");
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
 const emailService = require("../services/emailService");
+const bcrypt = require("bcrypt");
 
 // REGISTER
 async function userRegisterController(req, res) {
@@ -22,26 +23,35 @@ async function userRegisterController(req, res) {
     }
 
     // 1. create user
-    const user = await userModel.create([{
-      name,
-      email,
-      password,
-    }], { session });
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await userModel.create(
+      [
+        {
+          name,
+          email,
+          password: hashedPassword,
+        },
+      ],
+      { session },
+    );
 
     // 2. create account
-    const account = await accountModel.create([{
-      user: user[0]._id,
-      balance: 0,
-      status: "ACTIVE",
-    }], { session });
+    const account = await accountModel.create(
+      [
+        {
+          user: user[0]._id,
+          balance: 0,
+          status: "ACTIVE",
+        },
+      ],
+      { session },
+    );
 
     await session.commitTransaction();
 
-    const token = jwt.sign(
-      { userId: user[0]._id },
-      process.env.JWT_SECRET,
-      { expiresIn: "3d" }
-    );
+    const token = jwt.sign({ userId: user[0]._id }, process.env.JWT_SECRET, {
+      expiresIn: "3d",
+    });
 
     res.cookie("token", token);
 
@@ -55,11 +65,10 @@ async function userRegisterController(req, res) {
       account: account[0],
       token,
     });
-
   } catch (error) {
-    await session.abortTransaction();
     return res.status(500).json({
       message: error.message,
+      stack: error.stack,
     });
   } finally {
     session.endSession();
@@ -87,11 +96,9 @@ async function userLoginController(req, res) {
       });
     }
 
-    const token = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: "3d" }
-    );
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "3d",
+    });
 
     res.cookie("token", token);
 
@@ -106,10 +113,10 @@ async function userLoginController(req, res) {
       },
       token,
     });
-
   } catch (error) {
     return res.status(500).json({
       message: error.message,
+      stack: error.stack,
     });
   }
 }

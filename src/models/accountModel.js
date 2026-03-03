@@ -2,6 +2,10 @@ const mongoose = require("mongoose");
 const ledgerModel = require("./ledgerModel");
 
 const accountSchema = new mongoose.Schema({
+    name:{
+        type: String,
+        required: false
+    },
     user:{
         type: mongoose.Schema.Types.ObjectId,
         ref: "user",
