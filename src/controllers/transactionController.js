@@ -5,130 +5,114 @@ const ledgerModel = require("../models/ledgerModel");
 const emailService = require("../services/emailService");
 
 async function createTransaction(req, res) {
-  //1. Validate request
   const { fromAccount, toAccount, amount, idempotencyKey } = req.body;
 
-  console.log("toAccount:", toAccount);
-  console.log("toUserAccount:", toUserAccount);
-  console.log("req.user:", req.user);
-  console.log("fromUserAccount:", fromUserAccount);
   if (!fromAccount || !toAccount || !amount || !idempotencyKey) {
     return res.status(400).json({
       message: "fromAccount, toAccount, amount, idempotencyKey is required",
     });
   }
 
-  const fromUserAccount = await accountModel.findOne({
-    _id: fromAccount,
-  });
+  const session = await mongoose.startSession();
 
-  const toUserAccount = await accountModel.findOne({
-    _id: toAccount,
-  });
-  if (!toUserAccount || !fromUserAccount) {
-    return res.status(400).json({
-      message: "Invalid fromAcount and toAccount",
-    });
-  }
+  try {
+    session.startTransaction();
 
-  //02. validate idempotency key
-  const isTransactionAlreadyExists = await transactionModel.findOne({
-    idempotencyKey: idempotencyKey,
-  });
+    const fromUserAccount = await accountModel.findById(fromAccount);
+    const toUserAccount = await accountModel.findById(toAccount);
 
-  if (isTransactionAlreadyExists) {
-    if (isTransactionAlreadyExists.status === "COMPLETED") {
+    if (!toUserAccount || !fromUserAccount) {
+      return res.status(400).json({
+        message: "Invalid fromAccount or toAccount",
+      });
+    }
+
+    // Idempotency check
+    const existingTxn = await transactionModel.findOne({ idempotencyKey });
+
+    if (existingTxn) {
       return res.status(200).json({
-        message: "Transaction already proccessed",
-        transaction: isTransactionAlreadyExists,
+        message: "Transaction already processed",
+        transaction: existingTxn,
       });
     }
-    if (isTransactionAlreadyExists.status === "PENDING") {
-      return res.status(200).json({
-        message: "Transaction is still proccessing",
-      });
-    }
-    if (isTransactionAlreadyExists.status === "FAILED") {
-      return res.status(500).json({
-        message: "Transaction proccessing failed, please retry",
-      });
-    }
-    if (isTransactionAlreadyExists.status === "REVERSED") {
-      return res.status(500).json({
-        message: "Transaction was reversed, please retry",
-      });
-    }
-  }
 
-  //03. // check acount status
-  if (
-    fromUserAccount.status !== "ACTIVE" ||
-    toUserAccount.status !== "ACTIVE"
-  ) {
-    return res.status(400).json({
-      message:
-        "Both fromAccount and toAccount must be ACTIVE to process transaction",
-    });
-  }
+    if (
+      fromUserAccount.status !== "ACTIVE" ||
+      toUserAccount.status !== "ACTIVE"
+    ) {
+      return res.status(400).json({
+        message: "Accounts must be ACTIVE",
+      });
+    }
 
-  //04. Derive sender balance from ledger
-  const balance = await fromUserAccount.getBalance();
+    const balance = await fromUserAccount.getBalance();
 
-  if (balance < amount) {
-    res.status(400).json({
-      message: `Insufficient balance. Current balance is ${balance} Requested amount is ${amount}`,
-    });
-  }
-  //05. create transaction (PENDING)
-  const session = await transactionModel.create(
-    {
-      fromAccount,
-      toAccount,
+    if (balance < amount) {
+      return res.status(400).json({
+        message: `Insufficient balance: ${balance}`,
+      });
+    }
+
+    // ✅ Create transaction
+    const [txn] = await transactionModel.create(
+      [{
+        fromAccount,
+        toAccount,
+        amount,
+        idempotencyKey,
+        status: "PENDING",
+      }],
+      { session }
+    );
+
+    // ✅ Ledger entries (atomic)
+    await ledgerModel.create(
+      [
+        {
+          account: fromAccount,
+          amount,
+          transaction: txn._id,
+          type: "DEBIT",
+        },
+        {
+          account: toAccount,
+          amount,
+          transaction: txn._id,
+          type: "CREDIT",
+        },
+      ],
+      { session, ordered: true }
+    );
+
+    // ✅ Update status
+    txn.status = "COMPLETED";
+    await txn.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    await emailService.sendTransactionEmail(
+      req.user.email,
+      req.user.name,
       amount,
-      idempotencyKey,
-      status: "PENDING",
-    },
-    { session },
-  );
+      toAccount,
+      fromAccount
+    );
 
-  const debitLedgerEntry = await ledgerModel.create(
-    {
-      account: fromAccount,
-      amount: amount,
-      transaction: transaction._id,
-      type: "DEBIT",
-    },
-    { session },
-  );
+    return res.status(201).json({
+      message: "Transaction successful",
+      transaction: txn,
+    });
 
-  const creditLedgerEntry = await ledgerModel.create(
-    {
-      account: toAccount,
-      amount: amount,
-      transaction: transaction._id,
-      type: "CREDIT",
-    },
-    { session },
-  );
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
 
-  transaction.status = "COMPLETED";
-  await transaction.save({ session });
-
-  await session.commitTransaction();
-  session.endSession();
-
-  //10. send email notification
-  await emailService.sendTransactionEmail(
-    req.user.email,
-    req.user.name,
-    amount,
-    toAccount,
-    fromAccount,
-  );
-  res.status(201).json({
-    message: "Transaction completed successfully",
-    transaction: transaction,
-  });
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
 }
 
 async function createInitialFundsTransaction(req, res) {
@@ -182,7 +166,7 @@ console.log("fromUserAccount:", fromUserAccount);
           status: "PENDING",
         },
       ],
-      { session },
+      { session , ordered: true},
     );
 
     await ledgerModel.create(
